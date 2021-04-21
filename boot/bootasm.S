@@ -8,6 +8,7 @@
 .set PROT_MODE_CSEG,        0x8                     # kernel code segment selector
 .set PROT_MODE_DSEG,        0x10                    # kernel data segment selector
 .set CR0_PE_ON,             0x1                     # protected mode enable flag
+.set SMAP,                  0x534d4150
 
 # start address should be 0:7c00, in real mode, the beginning address of the running bootloader
 .globl start
@@ -27,20 +28,39 @@ start:
     #  address line 20 is tied low, so that addresses higher than
     #  1MB wrap around to zero by default. This code undoes this.
 seta20.1:
-    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+    inb $0x64, %al                                  # Wait for not busy
     testb $0x2, %al
     jnz seta20.1
 
     movb $0xd1, %al                                 # 0xd1 -> port 0x64
-    outb %al, $0x64                                 # 0xd1 means: write data to 8042's P2 port
+    outb %al, $0x64
 
 seta20.2:
-    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+    inb $0x64, %al                                  # Wait for not busy
     testb $0x2, %al
     jnz seta20.2
 
     movb $0xdf, %al                                 # 0xdf -> port 0x60
-    outb %al, $0x60                                 # 0xdf = 11011111, means set P2's A20 bit(the 1 bit) to 1
+    outb %al, $0x60
+
+probe_memory:
+    movl $0, 0x8000
+    xorl %ebx, %ebx
+    movw $0x8004, %di
+start_probe:
+    movl $0xE820, %eax
+    movl $20, %ecx
+    movl $SMAP, %edx
+    int $0x15
+    jnc cont
+    movw $12345, 0x8000
+    jmp finish_probe
+cont:
+    addw $20, %di
+    incl 0x8000
+    cmpl $0, %ebx
+    jnz start_probe
+finish_probe:
 
     # Switch from real to protected mode, using a bootstrap GDT
     # and segment translation that makes virtual addresses
@@ -74,6 +94,7 @@ protcseg:
 spin:
     jmp spin
 
+.data
 # Bootstrap GDT
 .p2align 2                                          # force 4 byte alignment
 gdt:
